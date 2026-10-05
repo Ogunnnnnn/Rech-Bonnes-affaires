@@ -132,7 +132,7 @@ def _normaliser_texte(texte: str) -> str:
 
     - Retire les accents (NFKD puis suppression des caracteres diacritiques).
     - Remplace tirets, apostrophes et ponctuation par des espaces, pour que
-      "L'Abergement-Clémenciat" et "l abergement clemenciat" soient
+      "L'Abergement-Clementiat" et "l abergement clementiat" soient
       equivalents.
     - Met en minuscules et compacte les espaces multiples.
     """
@@ -469,4 +469,170 @@ def obtenir_coordonnees(
     except (CommuneIntrouvable, ValueError):
         # Conformement au contrat de cette fonction : on retourne None
         # plutot que de laisser remonter une exception pour un "non trouve".
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Autocompletion ville / code postal (saisie en temps reel dans le formulaire
+# Streamlit) : fonctions ajoutees pour alimenter une liste deroulante qui se
+# mes a jour a chaque frappe clavier de l'utilisateur.
+# ---------------------------------------------------------------------------
+
+
+def _libelle_suggestion(coord: Coordonnees) -> str:
+    """Construit le libelle affiche dans la liste deroulante pour une commune.
+
+    Format retenu : "Nom de la commune (code_postal)", ex. "Lyon (69001)".
+    Ce format est a la fois lisible pour l'utilisateur et sans ambiguite
+    (nom + code postal identifie une commune de maniere quasi unique, meme
+    en cas d'homonymie entre departements).
+    """
+    return f"{coord.nom_commune} ({coord.code_postal})"
+
+
+def rechercher_suggestions_villes(
+    texte_saisi: str, limite: int = 10, chemin: Path = CHEMIN_CACHE_COMMUNES
+) -> list[str]:
+    """Retourne une liste de suggestions "ville (code postal)" pour l'autocompletion.
+
+    Destinee a etre appelee a *chaque frappe clavier* de l'utilisateur dans
+    le champ de saisie Streamlit (le script est reexecute a chaque rerun -
+    voir le commentaire explicatif dans app.py), pour alimenter dynamiquement
+    une liste deroulante de suggestions.
+
+    Parametres
+    ----------
+    texte_saisi : str
+        Texte partiel saisi par l'utilisateur : un debut de nom de commune
+        (ex. "lyo"), ou un debut/code postal complet (ex. "6900" ou "69001"),
+        insensible aux accents et a la casse.
+    limite : int
+        Nombre maximum de suggestions renvoyees (par defaut 10, pour rester
+        lisible dans une liste deroulante).
+    chemin : Path
+        Chemin du CSV du referentiel (par defaut celui livre avec l'app).
+
+    Retourne
+    --------
+    list[str]
+        Liste de libelles formates "Nom de la commune (code_postal)", triee
+        par pertinence :
+        1. correspondance EXACTE en prefixe (le nom normalise, ou le code
+           postal, commence exactement par le texte saisi normalise) ;
+        2. puis les communes dont le nom (ou le code postal) contient
+           seulement le texte saisi sans etre en prefixe ;
+        3. a l'interieur de chaque groupe, triee par "importance" de la
+           commune (address_count utilise comme proxy de la population),
+           decroissante.
+        Liste vide si `texte_saisi` est vide/blanc, ou si aucune commune ne
+        correspond.
+
+    Performance
+    -----------
+    S'appuie sur l'index deja construit et mis en cache module-level par
+    `charger_referentiel_communes` (cf. `_CACHE`) : le CSV (~35 000 lignes)
+    n'est lu et indexe qu'une seule fois par processus, quel que soit le
+    nombre de frappes clavier de l'utilisateur. Chaque appel ne fait ensuite
+    qu'un parcours en memoire des cles de l'index (deja normalisees), ce qui
+    reste de l'ordre de quelques millisecondes meme sur 35 000 communes -
+    largement compatible avec un rafraichissement a chaque frappe clavier
+    dans Streamlit.
+    """
+    if texte_saisi is None or not str(texte_saisi).strip():
+        return []
+
+    texte_norm = _normaliser_texte(texte_saisi)
+    if not texte_norm:
+        return []
+
+    # On s'assure que le referentiel est charge et indexe (une seule fois
+    # par processus grace au cache module-level).
+    charger_referentiel_communes(chemin)
+    index_nom = _CACHE["index_nom"]
+    index_code_postal = _CACHE["index_code_postal"]
+
+    # Texte saisi "ressemblant" a un (debut de) code postal : uniquement des
+    # chiffres (eventuellement avec des espaces, deja retires par la
+    # normalisation du code postal ci-dessous le cas echeant).
+    texte_chiffres = re.sub(r"\s+", "", str(texte_saisi).strip())
+    est_recherche_code_postal = texte_chiffres.isdigit() and len(texte_chiffres) <= 5
+
+    # candidats : dict cle=(nom_commune, code_postal) -> (coord, poids, rang_pertinence)
+    # rang_pertinence : 0 = prefixe exact (meilleur), 1 = contient seulement.
+    candidats: dict[tuple[str, str], tuple[Coordonnees, int, int]] = {}
+
+    def _ajouter_candidat(coord: Coordonnees, poids: int, rang: int) -> None:
+        cle = (coord.nom_commune, coord.code_postal)
+        existant = candidats.get(cle)
+        if existant is None or rang < existant[2] or (rang == existant[2] and poids > existant[1]):
+            candidats[cle] = (coord, poids, rang)
+
+    if est_recherche_code_postal:
+        # Recherche par code postal : prefixe (ex. "690" -> "69001", "69002"...).
+        for code_postal, entrees in index_code_postal.items():
+            if code_postal.startswith(texte_chiffres):
+                for coord, poids in entrees:
+                    _ajouter_candidat(coord, poids, rang=0)
+            elif texte_chiffres in code_postal:
+                for coord, poids in entrees:
+                    _ajouter_candidat(coord, poids, rang=1)
+
+    # Recherche par nom de commune, meme si la saisie est numerique (certains
+    # noms de communes contiennent des chiffres, ex. arrondissements) : on la
+    # fait systematiquement, en plus de la recherche par code postal.
+    for nom_norm, entrees in index_nom.items():
+        if nom_norm.startswith(texte_norm):
+            for coord, poids in entrees:
+                _ajouter_candidat(coord, poids, rang=0)
+        elif texte_norm in nom_norm:
+            for coord, poids in entrees:
+                _ajouter_candidat(coord, poids, rang=1)
+
+    if not candidats:
+        return []
+
+    # Tri final : prefixe exact avant "contient seulement" (rang croissant),
+    # puis par importance (poids = address_count) decroissante.
+    candidats_tries = sorted(
+        candidats.values(), key=lambda item: (item[2], -item[1])
+    )
+
+    suggestions = [_libelle_suggestion(coord) for coord, _poids, _rang in candidats_tries]
+    return suggestions[: max(0, int(limite))]
+
+
+def resoudre_suggestion_ville(
+    libelle_suggestion: str, chemin: Path = CHEMIN_CACHE_COMMUNES
+) -> Coordonnees | None:
+    """Retrouve les Coordonnees exactes correspondant a un libelle de suggestion.
+
+    A utiliser une fois que l'utilisateur a selectionne une suggestion dans
+    la liste deroulante produite par `rechercher_suggestions_villes` (format
+    "Nom de la commune (code_postal)"), pour obtenir sans ambiguite la
+    commune exacte (et non pas re-lancer une recherche floue sur le libelle).
+
+    Retourne None si le libelle ne correspond a aucune commune connue (cas
+    normalement impossible si le libelle provient bien de
+    `rechercher_suggestions_villes`, mais gere par securite).
+    """
+    if not libelle_suggestion or not str(libelle_suggestion).strip():
+        return None
+
+    correspondance = re.match(r"^(.*)\s\(([0-9]{4,5})\)\s*$", str(libelle_suggestion).strip())
+    if not correspondance:
+        # Libelle non reconnu : on retombe sur la recherche classique.
+        return obtenir_coordonnees(libelle_suggestion, chemin=chemin)
+
+    nom_commune, code_postal = correspondance.group(1).strip(), correspondance.group(2).strip()
+    nom_norm_cible = _normaliser_texte(nom_commune)
+    code_postal_norm = _normaliser_code_postal(code_postal)
+
+    for coord in charger_referentiel_communes(chemin):
+        if coord.code_postal == code_postal_norm and _normaliser_texte(coord.nom_commune) == nom_norm_cible:
+            return coord
+
+    # Repli : recherche classique sur le code postal seul.
+    try:
+        return geocoder_par_code_postal(code_postal_norm, chemin=chemin)
+    except (CommuneIntrouvable, ValueError):
         return None
