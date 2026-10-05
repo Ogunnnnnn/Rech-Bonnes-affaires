@@ -294,49 +294,21 @@ def afficher_liste_annonces(annonces: list) -> None:
 
 
 def section_resultats(filtres: FiltresRecherche | None) -> None:
-        from connecteurs.leboncoin import LeBonCoinConnecteur
-    from geocodage import obtenir_coordonnees
-    from distance import annonce_dans_perimetre
-    from scoring import classer_annonces_par_score
-
-    connecteur = LeBonCoinConnecteur()
-    annonces_brutes = connecteur.rechercher(filtres)
-    # (filtrage géographique + scoring à ajouter ensuite)
-    annonces = classer_annonces_par_score(annonces_brutes)
-    afficher_liste_annonces(annonces)
-
-
-    '''Affiche l'onglet "Resultats" : annonces dans le(s) rayon(s), triees par score.
-
-    TODO (V1):
-    - Si filtres est None, afficher un message invitant a lancer une recherche.
-    - Sinon, instancier les connecteurs correspondant a filtres.sites_a_interroger(),
-      appeler .rechercher(filtres) sur chacun (en gerant les erreurs par site
-      independamment, cf. ARCHITECTURE.md section Limites).
-    - Filtrer geographiquement avec distance.annonce_dans_perimetre, en
-      separant les annonces "dans le rayon" des annonces "hors rayon".
-    - Appliquer les filtres mots-cles inclus/exclus, etat, fiabilite vendeur.
-    - Appeler scoring.classer_annonces_par_score sur les annonces retenues.
-    - Afficher selon filtres.mode_affichage : une liste unique triee
-      (MELANGE) ou un bloc par site (SEPARE).
-    - Proposer un bouton "Ajouter aux favoris" par annonce affichee
-      (favoris.ajouter_favori).
-    '''
+    '''Affiche l'onglet "Resultats" : annonces dans le(s) rayon(s), triees par score.'''
     st.header("Resultats")
     if filtres is None:
         st.info("Renseignez vos criteres dans l'onglet 'Recherche' puis lancez une recherche.")
         return
-    st.warning(
-        "Les connecteurs ne sont pas encore implementes (squelette V1). "
-        "Cette section affichera ici les annonces triees par score 'bonne affaire'."
-    )
 
-    # TODO: remplacer par la vraie liste d'annonces renvoyee par les connecteurs
-    # (une fois scoring.classer_annonces_par_score et le filtrage geographique
-    # branches). En attendant, on passe une liste vide : afficher_liste_annonces
-    # se charge d'afficher un st.info de repli si la liste est vide.
-    annonces: list = []
+    from connecteurs.leboncoin import LeBonCoinConnecteur
+    from scoring import classer_annonces_par_score
+
+    connecteur = LeBonCoinConnecteur()
+    annonces_brutes = connecteur.rechercher(filtres)
+    # (filtrage geographique via distance.py + scoring complet a ajouter ensuite)
+    annonces = classer_annonces_par_score(annonces_brutes)
     afficher_liste_annonces(annonces)
+
 
 
 def section_autres(filtres: FiltresRecherche | None) -> None:
