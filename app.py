@@ -172,14 +172,9 @@ def section_formulaire_recherche() -> FiltresRecherche | None:
         )
         mode_affichage = ModeAffichage(mode_affichage_brut)
 
-    st.subheader("Fiabilite du vendeur")
-    seuil_fiabilite_vendeur_min = st.slider(
-        "Seuil minimum de fiabilite vendeur (si disponible sur le site)",
-        min_value=0,
-        max_value=100,
-        value=0,
-        help="0 = pas de filtre. Certains sites ne fournissent pas toujours cette information.",
-    )
+    # Bloc "Fiabilite du vendeur" (st.subheader + st.slider seuil_fiabilite_vendeur_min)
+    # supprime : le filtrage par seuil de fiabilite est remplace par l'affichage
+    # d'un badge colore par annonce dans section_resultats() (cf. plus bas).
 
     lancer = st.button("Lancer la recherche", type="primary")
 
@@ -202,10 +197,89 @@ def section_formulaire_recherche() -> FiltresRecherche | None:
         accepter_si_livraison_disponible=accepter_si_livraison_disponible,
         multisite=multisite,
         sites_actifs=sites_coches,
-        seuil_fiabilite_vendeur_min=seuil_fiabilite_vendeur_min or None,
+        seuil_fiabilite_vendeur_min=None,  # Variable/slider supprimee : plus de filtrage par seuil ici,
+        # la fiabilite est desormais affichee via un badge par annonce (section_resultats()).
         mode_affichage=mode_affichage,
     )
     return filtres
+
+
+def afficher_badge_fiabilite_vendeur(score_fiabilite_vendeur: float | None) -> None:
+    '''Affiche un badge HTML colore resumant la fiabilite du vendeur.
+
+    HYPOTHESE D'ECHELLE : score_fiabilite_vendeur est exprime sur une echelle
+    0-100 (cf. le commentaire du champ dans connecteurs/base.py : "0-100, selon
+    donnees disponibles sur le site"). Les seuils ci-dessous (70 et 40) sont
+    donc a comprendre comme des pourcentages, PAS comme des fractions 0-1.
+    Si un connecteur venait a fournir une echelle 0-1, il faudrait soit
+    normaliser le score avant l'appel, soit adapter les seuils (0.7 et 0.4).
+
+    Parametres
+    ----------
+    score_fiabilite_vendeur : float | None
+        Score de fiabilite du vendeur, ou None si l'information n'est pas
+        disponible sur le site d'origine de l'annonce.
+    '''
+    style_commun = (
+        "display:inline-block; padding:2px 10px; border-radius:12px; "
+        "color:white; font-size:0.85em; font-weight:600;"
+    )
+
+    if score_fiabilite_vendeur is None:
+        couleur = "#9e9e9e"  # gris
+        libelle = "Fiabilite inconnue"
+    elif score_fiabilite_vendeur >= 70:
+        couleur = "#2e7d32"  # vert
+        libelle = "✅ Bon vendeur"
+    elif score_fiabilite_vendeur >= 40:
+        couleur = "#f57c00"  # orange
+        libelle = "⚠️ Fiabilite moyenne"
+    else:
+        couleur = "#c62828"  # rouge
+        libelle = "❌ Attention vendeur"
+
+    st.markdown(
+        f'<span style="{style_commun} background-color:{couleur};">{libelle}</span>',
+        unsafe_allow_html=True,
+    )
+
+
+def afficher_carte_annonce(annonce) -> None:
+    '''Affiche une "carte" simple pour une annonce (titre, prix, ville) et son badge de fiabilite.
+
+    Parametres
+    ----------
+    annonce : connecteurs.base.Annonce
+        Annonce normalisee a afficher.
+    '''
+    col_infos, col_badge = st.columns([4, 1])
+    with col_infos:
+        st.subheader(annonce.titre)
+        ville_affichee = annonce.ville if annonce.ville else "Ville inconnue"
+        st.write(f"{annonce.prix:.2f} EUR - {ville_affichee}")
+    with col_badge:
+        afficher_badge_fiabilite_vendeur(annonce.score_fiabilite_vendeur)
+    st.divider()
+
+
+def afficher_liste_annonces(annonces: list) -> None:
+    '''Boucle d'affichage des annonces : carte (titre, prix, ville) + badge de fiabilite.
+
+    Fonction prete a etre appelee dans section_resultats() dès que les
+    connecteurs renverront une vraie liste d'Annonce. Tant que ce n'est pas
+    le cas, section_resultats() lui passe une liste vide et un st.info de
+    repli est affiche.
+
+    Parametres
+    ----------
+    annonces : list[connecteurs.base.Annonce]
+        Liste des annonces a afficher, deja filtrees/triees en amont.
+    '''
+    if not annonces:
+        st.info("Aucune annonce a afficher pour le moment.")
+        return
+    for annonce in annonces:
+        afficher_carte_annonce(annonce)
 
 
 def section_resultats(filtres: FiltresRecherche | None) -> None:
@@ -233,6 +307,13 @@ def section_resultats(filtres: FiltresRecherche | None) -> None:
         "Les connecteurs ne sont pas encore implementes (squelette V1). "
         "Cette section affichera ici les annonces triees par score 'bonne affaire'."
     )
+
+    # TODO: remplacer par la vraie liste d'annonces renvoyee par les connecteurs
+    # (une fois scoring.classer_annonces_par_score et le filtrage geographique
+    # branches). En attendant, on passe une liste vide : afficher_liste_annonces
+    # se charge d'afficher un st.info de repli si la liste est vide.
+    annonces: list = []
+    afficher_liste_annonces(annonces)
 
 
 def section_autres(filtres: FiltresRecherche | None) -> None:
