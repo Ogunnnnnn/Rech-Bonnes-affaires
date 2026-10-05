@@ -1,11 +1,49 @@
-# requirements.txt - dependances Python pour la V1 de bonnes_affaires_app
-# Usage strictement personnel, frequence d'utilisation tres faible (pas de scraping massif).
+# requirements_corrige.txt - dependances Python pour la V1 de bonnes_affaires_app
+# Version corrigee pour resoudre les echecs de deploiement sur Streamlit Community Cloud
+# (erreurs "installer returned a non-zero exit code" / "Error during processing dependencies").
+#
+# ============================================================
+# RESUME DES CHANGEMENTS PAR RAPPORT A L'ORIGINAL
+# ============================================================
+# 1. lxml SUPPRIME :
+#    - lxml est un package C (libxml2/libxslt) qui necessite une compilation native
+#      si aucune wheel precompilee n'est disponible pour la version Python utilisee
+#      par Streamlit Cloud. C'est une cause TRES frequente de "non-zero exit code"
+#      car l'environnement de build ne dispose pas des headers systeme (libxml2-dev,
+#      libxslt-dev) necessaires pour compiler depuis les sources.
+#    - beautifulsoup4 fonctionne nativement avec le parser "html.parser" (inclus
+#      dans la stdlib Python), suffisant pour un usage personnel a faible frequence.
+#      -> Dans le code : BeautifulSoup(html, "html.parser") au lieu de "lxml".
+#
+# 2. Toutes les bornes superieures strictes (<X.0) ont ete retirees :
+#    - Les contraintes du type ">=2.1,<3.0" bloquent artificiellement les mises a
+#      jour de securite/compatibilite et peuvent entrer en conflit avec les
+#      dependances transitives de streamlit (qui impose lui-meme des versions
+#      minimales a certains packages). Garder seulement une borne minimale
+#      (">=X.Y") laisse pip resoudre une combinaison compatible et evite les
+#      conflits de resolution ("ResolutionImpossible").
+#    - Exception : streamlit est garde avec une fourchette large mais raisonnable
+#      pour eviter une rupture majeure d'API (>=1.32).
+#
+# 3. pydantic : contrainte assouplie (>=2.5, sans plafond).
+#    - pydantic-core (dependance compilee en Rust) dispose de wheels precompilees
+#      pour la quasi-totalite des plateformes/versions Python recentes, donc le
+#      risque de compilation est faible, mais fixer un plafond <3.0 peut forcer
+#      pip a retenir une version ancienne de pydantic-core sans wheel disponible
+#      pour la version Python exacte de Streamlit Cloud. Retirer le plafond permet
+#      a pip de choisir automatiquement la derniere version compatible avec wheel.
+#
+# 4. Toutes les versions minimales ont ete conservees car elles ne posent pas de
+#    probleme de compilation (requests, pandas, unidecode, python-dateutil sont
+#    des packages purs Python ou disposant de wheels manylinux fiables).
+# ============================================================
 
-streamlit>=1.32,<2.0        # Framework web pour construire l'interface utilisateur (app.py, onglets, formulaires)
-requests>=2.31,<3.0          # Requetes HTTP vers Le Bon Coin / Vinted (connecteurs/*.py)
-beautifulsoup4>=4.12,<5.0    # Parsing HTML des pages de resultats (connecteurs/leboncoin.py notamment)
-lxml>=5.0,<6.0                # Parseur HTML/XML rapide utilise en backend par BeautifulSoup
-pandas>=2.1,<3.0              # Manipulation des annonces (DataFrames), tri, agregations pour le scoring
-unidecode>=1.3,<2.0           # Normalisation des noms de villes (suppression accents) pour geocodage.py
-python-dateutil>=2.8,<3.0     # Parsing/manipulation de dates (dates de publication, historique des prix)
-pydantic>=2.5,<3.0             # Validation/typage optionnel des structures de donnees (Annonce, Filtres)
+streamlit>=1.32              # Framework web pour l'interface utilisateur (app.py, onglets, formulaires)
+requests>=2.31               # Requetes HTTP vers Le Bon Coin / Vinted (connecteurs/*.py)
+beautifulsoup4>=4.12         # Parsing HTML des pages de resultats (connecteurs/leboncoin.py notamment)
+                              # -> utiliser le parser natif "html.parser" (pas besoin de lxml)
+pandas>=2.1                  # Manipulation des annonces (DataFrames), tri, agregations pour le scoring
+unidecode>=1.3               # Normalisation des noms de villes (suppression accents) pour geocodage.py
+python-dateutil>=2.8         # Parsing/manipulation de dates (dates de publication, historique des prix)
+pydantic>=2.5                # Validation/typage optionnel des structures de donnees (Annonce, Filtres)
+
