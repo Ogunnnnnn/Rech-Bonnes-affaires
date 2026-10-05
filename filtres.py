@@ -52,10 +52,14 @@ class VilleRayon:
     def __post_init__(self) -> None:
         '''Valide que le rayon reste dans les bornes attendues par l'UI (1-100 km).
 
-        TODO (V1): lever une ValueError si rayon_km n'est pas dans [1, 100],
-        pour detecter rapidement une incoherence entre app.py et filtres.py.
+        Leve une ValueError si ville_ou_code_postal est vide (ou uniquement
+        compose d'espaces), ou si rayon_km n'est pas un nombre strictement
+        positif.
         '''
-        raise NotImplementedError("A implementer en V1")
+        if not isinstance(self.ville_ou_code_postal, str) or not self.ville_ou_code_postal.strip():
+            raise ValueError("Le champ ville ou code postal ne peut pas être vide.")
+        if not isinstance(self.rayon_km, (int, float)) or isinstance(self.rayon_km, bool) or self.rayon_km <= 0:
+            raise ValueError("Le rayon (km) doit être un nombre strictement positif.")
 
 
 @dataclass
@@ -107,10 +111,30 @@ class FiltresRecherche:
     def valider(self) -> list[str]:
         '''Verifie la coherence globale des filtres et renvoie une liste de messages d'erreur.
 
-        TODO (V1): par exemple, verifier que prix_min <= prix_max si les deux
-        sont fournis, qu'au moins un site est selectionne, que villes_rayons
-        n'est pas vide si l'utilisateur a desactive la livraison, etc.
-        Retourne une liste vide si tout est coherent (permet a app.py
-        d'afficher des messages d'erreur clairs dans le formulaire).
+        Verifie notamment que prix_min <= prix_max si les deux sont fournis,
+        qu'au moins un site est selectionne (selon multisite/sites_actifs),
+        et que villes_rayons n'est pas vide si la livraison n'est pas
+        acceptee comme alternative. Retourne une liste vide si tout est
+        coherent (permet a app.py d'afficher des messages d'erreur clairs
+        dans le formulaire).
         '''
-        raise NotImplementedError("A implementer en V1")
+        erreurs: list[str] = []
+
+        if self.prix_min is not None and self.prix_max is not None:
+            if self.prix_min > self.prix_max:
+                erreurs.append("Le prix minimum ne peut pas etre superieur au prix maximum.")
+
+        if self.multisite:
+            if not ["leboncoin", "vinted"]:
+                erreurs.append("Aucun site disponible a interroger.")
+        else:
+            if not self.sites_actifs:
+                erreurs.append("Veuillez selectionner au moins un site a interroger.")
+
+        if not self.villes_rayons and not self.accepter_si_livraison_disponible:
+            erreurs.append(
+                "Veuillez ajouter au moins une zone de recherche (ville + rayon) "
+                "ou accepter les annonces livrables."
+            )
+
+        return erreurs
