@@ -119,14 +119,25 @@ def section_formulaire_recherche() -> FiltresRecherche | None:
     st.subheader("Zones de recherche (villes + rayon)")
     st.caption("Ajoutez une ou plusieurs villes ; chaque ville dispose de son propre rayon (1-100 km).")
 
+    texte_saisi = st.text_input("Ville ou code postal", key="saisie_ville_autocomplete")
+
+    from geocodage import rechercher_suggestions_villes
+    suggestions = rechercher_suggestions_villes(texte_saisi)
+
+    ville_selectionnee = None
+    if suggestions:
+        ville_selectionnee = st.selectbox("Suggestions", suggestions, key="selectbox_suggestions_ville")
+    elif texte_saisi:
+        st.info("Aucune commune trouvee")
+
     with st.form("ajout_ville", clear_on_submit=True):
-        col_ville, col_rayon, col_ajout = st.columns([3, 2, 1])
-        with col_ville:
-            nouvelle_ville = st.text_input("Ville ou code postal", key="champ_nouvelle_ville")
+        col_rayon, col_ajout = st.columns([2, 1])
         with col_rayon:
             nouveau_rayon = st.slider("Rayon (km)", min_value=1, max_value=100, value=15, key="champ_nouveau_rayon")
         with col_ajout:
             ajouter = st.form_submit_button("Ajouter")
+
+    nouvelle_ville = ville_selectionnee if ville_selectionnee else texte_saisi
 
     if ajouter and nouvelle_ville.strip():
         # TODO (V1): valider la ville via geocodage.obtenir_coordonnees avant
