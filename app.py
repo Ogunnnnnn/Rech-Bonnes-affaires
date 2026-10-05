@@ -294,6 +294,18 @@ def afficher_liste_annonces(annonces: list) -> None:
 
 
 def section_resultats(filtres: FiltresRecherche | None) -> None:
+        from connecteurs.leboncoin import LeBonCoinConnecteur
+    from geocodage import obtenir_coordonnees
+    from distance import annonce_dans_perimetre
+    from scoring import classer_annonces_par_score
+
+    connecteur = LeBonCoinConnecteur()
+    annonces_brutes = connecteur.rechercher(filtres)
+    # (filtrage géographique + scoring à ajouter ensuite)
+    annonces = classer_annonces_par_score(annonces_brutes)
+    afficher_liste_annonces(annonces)
+
+
     '''Affiche l'onglet "Resultats" : annonces dans le(s) rayon(s), triees par score.
 
     TODO (V1):
